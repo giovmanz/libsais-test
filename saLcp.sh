@@ -34,4 +34,5 @@ do
   # compute sha1sum and delete (after the initial sha1 computation)
   sha1sum  $f $f.lcp $f.sa >> $sha1file 
   rm -f $f.sa $f.lcp
+  sleep 5
 done
