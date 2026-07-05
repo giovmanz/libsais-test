@@ -82,6 +82,8 @@ void compute_lcp_phi_sparse(int_t *s, uint_t *SA1,
 
 /*****************************************************************************/
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
 void getBuckets_k(int_t *s, 
   uint_t *bkt, uint_t n,
   unsigned int K, int end, int cs) { 
@@ -98,6 +100,7 @@ void getBuckets_k(int_t *s,
     bkt[i]=end ? sum-1 : sum-bkt[i]; 
   }
 }
+#pragma GCC diagnostic pop
 
 void putSuffix0(uint_t *SA, 
   int_t *s, uint_t *bkt, 
@@ -538,6 +541,8 @@ void induceSAs0_LCP(uint_t *SA, int_t *LCP,
 
 /*****************************************************************************/
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
 void putSubstr0(uint_t *SA,
   int_t *s, uint_t *bkt,
   uint_t n, unsigned int K, int cs) {
@@ -561,6 +566,7 @@ void putSubstr0(uint_t *SA,
   // set the single sentinel LMS-substring.
   SA[0]=n-1;
 }
+#pragma GCC diagnostic pop
 
 /*****************************************************************************/
 
@@ -981,7 +987,7 @@ int_t SACA_K(int_t *s, uint_t *SA,
   // stage 1: reduce the problem by at least 1/2.
   if(level==0) {
 
-    bkt=(uint_t *)malloc(sizeof(int_t)*K);
+    bkt=(uint_t *)malloc(sizeof(uint_t)*K);
     putSubstr0(SA, s, bkt, n, K, cs);
 
     #if DEBUG
@@ -1152,7 +1158,7 @@ int_t SACA_K_LCP(int_t *s, uint_t *SA, int_t *LCP,
   #endif
 
   // stage 1: reduce the problem by at least 1/2.
-  bkt=(uint_t *)malloc(sizeof(int_t)*K);
+  bkt=(uint_t *)malloc(sizeof(uint_t)*K);
   putSubstr0(SA, s, bkt, n, K, cs);
 
   #if DEBUG

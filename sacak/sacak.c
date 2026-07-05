@@ -65,9 +65,10 @@ int main(int argc, char *argv[])
   /* ------------ set default values ------------- */
   char *sa_filename = NULL;
   char *lcp_filename = NULL;
+  int compute_avg_lcp = 0;
 
   /* ------------- read options from command line ----------- */
-  while ((c=getopt(argc, argv, "vw:W:")) != -1) {
+  while ((c=getopt(argc, argv, "vw:W:a")) != -1) {
     switch (c) 
       {
       case 'w':
@@ -78,6 +79,8 @@ int main(int argc, char *argv[])
       //   NumTreads = atoi(optarg); break;
       case 'v':
         Verbose++; break;
+      case 'a':
+        compute_avg_lcp = 1; break;
       case '?':
         fprintf(stderr,"Unknown option: %c -main-\n", optopt);
         exit(1);
@@ -86,11 +89,11 @@ int main(int argc, char *argv[])
   if(optind<argc)
     fnam=argv[optind];
   else {
-    fprintf(stderr, "Usage:\n\t%s [-w safile][-t helper_threads][-v] ",argv[0]);
+    fprintf(stderr, "Usage:\n\t%s [-w safile][-v][-a] ",argv[0]);
     fprintf(stderr, " file\n\n");
     fprintf(stderr,"\t-w safile   write sa to safile\n");    
     fprintf(stderr,"\t-W lcpfile  write lcp to lcpfile\n");
-    // fprintf(stderr,"\t-t threads  # helper threads [def. %d]\n",NumTreads);    
+    fprintf(stderr,"\t-a          compute and print average LCP value\n"); 
     fprintf(stderr,"\t-v          produces a verbose output\n\n");
     return 0;
   }
@@ -140,7 +143,7 @@ int main(int argc, char *argv[])
 	 
   /* ---------  start measuring time ------------- */
   start_time = times(&st);
-  if(lcp_filename!=NULL) {
+  if(lcp_filename!=NULL || compute_avg_lcp) {
     lcp=malloc((size_t) (n+1)*sizeof *lcp);
     if(!lcp) {
       fprintf(stderr, "malloc failed\n");
@@ -149,16 +152,12 @@ int main(int argc, char *argv[])
     e = sacak_lcp(x, p, lcp, n+1);
   }
   else {
-    #ifdef USE_INT64
-    libsais64(x, p, n, 1, NULL);
-    #else
     e = sacak(x, p, n+1);
   }
 	if(e<0) {
 		fprintf(stderr,"Error: sacak returned %d\n", e);
 		return 1;
 	}
-  #endif
   end_time = times(&en);
   tot_time =  (end_time - start_time)/DBL_CLK_TCK;
   if(Verbose>1) 
@@ -170,7 +169,17 @@ int main(int argc, char *argv[])
 
   // --------------- write lcp to a file 
   if(lcp!=NULL) {
-    write_lcp(lcp_filename, lcp+1, n);
+    if(lcp_filename!=NULL)
+      write_lcp(lcp_filename, lcp+1, n);
+    
+    if(compute_avg_lcp) {
+      double sum = 0.0;
+      for(uint_t i = 1; i <= n; i++) {
+        sum += lcp[i];
+      }
+      double avg = (n > 0) ? sum / n : 0.0;
+      printf("Average LCP: %f\n", avg);
+    }
     free(lcp); 
   }
   // free memory
@@ -179,7 +188,3 @@ int main(int argc, char *argv[])
   printf("Elapsed time: %f seconds.\n", tot_time);
   return 0;
 }
-
-
-
-

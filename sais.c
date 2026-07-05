@@ -99,9 +99,10 @@ int main(int argc, char *argv[])
   /* ------------ set default values ------------- */
   char *sa_filename = NULL;
   char *lcp_filename = NULL;
+  int compute_avg_lcp = 0;
 
   /* ------------- read options from command line ----------- */
-  while ((c=getopt(argc, argv, "vw:W:")) != -1) {
+  while ((c=getopt(argc, argv, "vw:W:a")) != -1) {
     switch (c) 
       {
       case 'w':
@@ -112,6 +113,8 @@ int main(int argc, char *argv[])
       //   NumTreads = atoi(optarg); break;
       case 'v':
         Verbose++; break;
+      case 'a':
+        compute_avg_lcp = 1; break;
       case '?':
         fprintf(stderr,"Unknown option: %c -main-\n", optopt);
         exit(1);
@@ -121,11 +124,11 @@ int main(int argc, char *argv[])
   if(optind<argc)
     fnam=argv[optind];
   else {
-    fprintf(stderr, "Usage:\n\t%s [-w safile][-t helper_threads][-v] ",argv[0]);
+    fprintf(stderr, "Usage:\n\t%s [-w safile][-v][-a] ",argv[0]);
     fprintf(stderr, " file\n\n");
     fprintf(stderr,"\t-w safile   write sa to safile\n");    
     fprintf(stderr,"\t-W lcpfile  write lcp to lcpfile\n");
-    // fprintf(stderr,"\t-t threads  # helper threads [def. %d]\n",NumTreads);    
+    fprintf(stderr,"\t-a          compute and print average LCP value\n");   
     fprintf(stderr,"\t-v          produces a verbose output\n\n");
     return 0;
   }
@@ -164,11 +167,16 @@ int main(int argc, char *argv[])
 
   /* ---------  start measuring time ------------- */
   start_time = times(&st);
+  int32_t e;
   #ifdef USE_INT64
-  libsais64(x, p, n, 1, NULL);
+  e = libsais64(x, p, n, 1, NULL);
   #else
-  libsais(x, p, n, 1, NULL);
+  e = libsais(x, p, n, 1, NULL);
   #endif
+  if(e<0) {
+    fprintf(stderr,"Error: libsais returned %d\n", e);
+    return 1;
+  }
   end_time = times(&en);
   tot_time =  (end_time - start_time)/DBL_CLK_TCK;
   if(Verbose>1) fprintf(stderr,"Elapsed time: %f seconds (SA)\n", tot_time);
@@ -177,26 +185,40 @@ int main(int argc, char *argv[])
   if(sa_filename!=NULL) 
     write_sa(sa_filename,p,n); // discard first position since it is the suffix starting at the end of the string
 
-  // --------------- compute lcp and write it to a file 
-  if(lcp_filename!=NULL) {
+  // --------------- compute lcp and write it to a file or compute average
+  if(lcp_filename!=NULL || compute_avg_lcp) {
     clock_t lcp_time = times(&st); 
     idx_t *plcp=malloc((n+1)*sizeof *plcp);
     if(!plcp) {
       fprintf(stderr, "malloc failed\n");
       return 1;
     }  
-    if(Verbose>1) fprintf(stderr,"Computing lcp and writing it to file %s\n", lcp_filename);
+    if(Verbose>1) fprintf(stderr,"Computing lcp array\n");
     #ifdef USE_INT64
-    libsais64_plcp(x, p, plcp, n);
-    libsais64_lcp(plcp, p, p, n);
+    e = libsais64_plcp(x, p, plcp, n);
+    if(e<0) {fprintf(stderr,"Error: libsais64_plcp returned %d\n", e);return 1;}
+    e = libsais64_lcp(plcp, p, p, n);
+    if(e<0) {fprintf(stderr,"Error: libsais64_lcp returned %d\n", e);return 1;}
     #else
     libsais_plcp(x, p, plcp, n);
     libsais_lcp(plcp, p, p, n);
     #endif
     end_time = times(&en);
     tot_time =  (end_time - lcp_time)/DBL_CLK_TCK;
-    if(Verbose) fprintf(stderr,"Elapsed time: %f seconds (LCP)\n", tot_time);
-    write_lcp(lcp_filename, p, n);
+    if(Verbose) fprintf(stderr,"Elapsed time: %f seconds (SA+LCP)\n", tot_time);
+    
+    if(lcp_filename!=NULL)
+      write_lcp(lcp_filename, p, n);
+    
+    if(compute_avg_lcp) {
+      double sum = 0.0;
+      for(idx_t i = 0; i < n; i++) {
+        sum += p[i];
+      }
+      double avg = (n > 0) ? sum / n : 0.0;
+      printf("Average LCP: %f\n", avg);
+    }
+    
     free(plcp); 
   }
   // now fnam is no longer needed

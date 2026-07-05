@@ -16,7 +16,7 @@ CFLAGS = -g -O3 -march=native -Wall -Winline -std=c11 -pthread -fomit-frame-poin
 
 
 
-EXECS = sacak
+EXECS = sacak sacak64
 
 .PHONY: all
 all : $(EXECS)
@@ -26,8 +26,11 @@ all : $(EXECS)
 sacak: sacak.c sacak-lcp.o 
 	$(CC) $(CFLAGS) -o $@ $^
 
-sais64: sais.c build/libsais.a 
-	$(CC) $(CFLAGS) -o $@ $^ -DUSE_INT64
+sacak64: sacak.c sacak-lcp64.o  
+	$(CC) $(CFLAGS) -o $@ $^ -DM64
+
+sacak-lcp64.o: sacak-lcp.c sacak-lcp.h
+	$(CC) -c $(CFLAGS) $< -o $@ -DM64
 
 # pattern rule for all objects files
 %.o: %.c *.h
