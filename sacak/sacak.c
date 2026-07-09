@@ -61,6 +61,29 @@ void write_lcp(char *filename, int_t *p, uint_t n)
   fclose(lcp);
 }
 
+static void read_input_bytes(FILE *f, uint_t n, uint8_t *x, const char *fnam)
+{
+  rewind(f);
+  if (fread(x, 1, (size_t)n, f) != (size_t)n) {
+    perror(fnam);
+    return 1;
+  }
+  // check which symbols appear in the input and remap them to a compact alphabet
+  unsigned char q[UINT8_MAX + 1] = {0}; // track chars 
+  for (idx_t i=0; i < n; ++i) q[x[i]] = 1;
+  idx_t kk = 0;
+  for (int i = 0; i <= UINT8_MAX; ++i)
+    if (q[i]) q[i] = kk++; // assign new compacted symbol values to the chars that appear in the input
+  if(kk==UINT8_MAX + 1) {
+    fprintf(stderr, "%s: input file contains all symbols in [0,255], not allowed in sacak-uint8\n", fnam);
+    exit(1);
+  }
+  assert(q[UINT8_MAX]<UINT8_MAX);
+  for (idx_t i=0; i < n; ++i)
+    x[i] = q[x[i]] + 1;
+  return;
+}
+
 
 // read and remap alphabet to 1..maxv+1
 static uint_t read_input_uint16(FILE *f, uint_t n, int_t *x, uint16_t *tmp16, const char *fnam)
@@ -104,7 +127,7 @@ static uint_t read_input_int32(FILE *f, uint_t n, int_t *x, int32_t *tmp32, cons
   }
   uint_t range = (uint_t)(maxv - minv) + 1;
   if(range > (uint_t)I_MAX) {
-    fprintf(stderr, "%s: input file contains a range larger than INT32_MAX, use -DM64\n", fnam);
+    fprintf(stderr, "%s: input file contains a range of symbols larger than INT32_MAX, use -DM64\n", fnam);
     // note: it is bad that -D64 forces the input to be stored in an unint64_t array but here we take advantage of this
     exit(1);
   }
@@ -223,13 +246,9 @@ int main(int argc, char *argv[])
     alpha_size = read_input_uint16(f, n, (int_t *)x, (uint16_t *) p, fnam);
   else if (input_is_int)
     alpha_size = read_input_int32(f, n, (int_t *)x, (int32_t *) p, fnam); 
-  else {
-    if(fread(x, sizeof(uint8_t), (size_t)n, f)!=(size_t)n) { 
-      perror(fnam); return 1; }
-    fclose(f);
-    // missing check on 0s
-  }
-	 
+  else 
+    read_input_bytes(f,n, (uint8_t *) x, fname);
+   
   /* ---------  start measuring time ------------- */
   start_time = times(&st);
   if(lcp_filename!=NULL || compute_avg_lcp) {
@@ -238,32 +257,27 @@ int main(int argc, char *argv[])
       fprintf(stderr, "malloc failed\n");
       free(x); free(p);
       return 1;
-    }  
-    if (input_is_int || input_is_16bit) {
-      int_t *s = (int_t *) x;
-      s[n]=0; // sentinel
-      e = sacak_lcp_int(s, p, lcp, n+1, alpha_size);
-    } else {
-      unsigned char *s = (unsigned char *) x;
-      s[n]=0; // sentinel
-      e = sacak_lcp(s, p, lcp, n+1);
     }
   }
+  else lcp=NULL: // no lcp requested 
+    
+  if (input_is_int || input_is_16bit) {
+    int_t *s = (int_t *) x;
+    s[n]=0; // sentinel
+    if(lcp) e = sacak_lcp_int(s, p, lcp, n+1, alpha_size);
+    else    e = sacak_int(s, p, n+1, alpha_size);  
+  } 
   else {
-    if (input_is_int || input_is_16bit) {
-      int_t *s = (int_t *) x;
-      s[n]=0; // sentinel
-      e = sacak_int(s, p, n+1, alpha_size);
-    } else {
-      unsigned char *s = (unsigned char *) x;
-      s[n]=0; // sentinel
-      e = sacak(s, p, n+1);
-    }
+    unsigned char *s = (unsigned char *) x;
+    s[n]=0; // sentinel
+    if(lcp)  e = sacak_lcp(s, p, lcp, n+1);
+    else     e = sacak(s, p, n+1);
   }
-	if(e<0) {
-		fprintf(stderr,"Error: sacak returned %d\n", e);
-		return 1;
-	}
+
+  if(e<0) {
+    fprintf(stderr,"Error: sacak returned %d\n", e);
+    return 1;
+  }
   end_time = times(&en);
   tot_time =  (end_time - start_time)/DBL_CLK_TCK;
   if(Verbose>1) 
