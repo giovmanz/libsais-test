@@ -1,10 +1,15 @@
 # Test programs for libsais
 
+to enable omp, in Cmakelisis.txt set 
 
-First compile the `libsais.a` library
+option(LIBSAIS_USE_OPENMP "Use OpenMP for parallelization" ON)
+
+
+
+Compile the `libsais.a` library
 ```bash
 mkdir build; cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang
 make  VERBOSE=1
 ```
 then the `saisXX` test programs:

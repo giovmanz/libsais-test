@@ -14,7 +14,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-option(LIBSAIS_USE_OPENMP "Use OpenMP for parallelization" OFF)
+option(LIBSAIS_USE_OPENMP "Use OpenMP for parallelization" ON)
 option(LIBSAIS_BUILD_SHARED_LIB "Build libsais as a shared library" OFF)
 
 if(LIBSAIS_BUILD_SHARED_LIB)

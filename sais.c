@@ -1,5 +1,6 @@
 /* >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>   
-   Program to test suffix sorting and LCP building  
+   Test suffix sorting and LCP building with libsais
+      
    Reads a sequence of unsigned bytes/short/int from
    a file and compute SA and LCP array
    here using the sais+plcp (from libsais) algorithm  
@@ -49,7 +50,6 @@ int32_t libsais16_lcp(const int32_t * PLCP, const int32_t * SA, int32_t * LCP, i
 #endif
 
 #define DBL_CLK_TCK ((double) sysconf(_SC_CLK_TCK)) // clocks x secs 
-#define MIN(a, b) ((a)<=(b) ? (a) : (b))
 int Verbose=0;
 
 /* **********************************************************
@@ -144,6 +144,8 @@ int main(int argc, char *argv[])
       fprintf(stderr,"%s ",argv[c]);
     fprintf(stderr,"\n");
   }
+  if(Verbose>1) 
+    fprintf(stderr,"Alphabet type: %s\n", (input_is_16bit ? "uint16" : "uint8"));
 
    if (! (f=fopen(fnam, "rb"))) {
       perror(fnam);
@@ -207,7 +209,7 @@ int main(int argc, char *argv[])
   }
   end_time = times(&en);
   tot_time =  (end_time - start_time)/DBL_CLK_TCK;
-  if(Verbose>1) fprintf(stderr,"Elapsed time: %f seconds (SA)\n", tot_time);
+  if(Verbose) fprintf(stderr,"Elapsed time: %f seconds (SA)\n", tot_time);
   
   // --------------- write sa to a file 
   if(sa_filename!=NULL) 
@@ -249,7 +251,7 @@ int main(int argc, char *argv[])
     }
     end_time = times(&en);
     tot_time =  (end_time - lcp_time)/DBL_CLK_TCK;
-    if(Verbose) fprintf(stderr,"Elapsed time: %f seconds (SA+LCP)\n", tot_time);
+    if(Verbose) fprintf(stderr,"Elapsed time: %f seconds (LCP)\n", tot_time);
     
     if(lcp_filename!=NULL)
       write_lcp(lcp_filename, p, n);

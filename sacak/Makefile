@@ -37,7 +37,7 @@ sacak-lcp64.o: sacak-lcp.c sacak-lcp.h
 	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
-	rm -f *.o *.a $(EXECS)
+	rm -f *.o $(EXECS)
 
 
 

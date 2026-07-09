@@ -34,7 +34,7 @@ sais64: sais.c build/libsais.a
 	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
-	rm -f *.o *.a $(EXECS)
+	rm -f *.o $(EXECS)
 
 
 tarfile:

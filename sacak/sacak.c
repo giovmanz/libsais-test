@@ -61,17 +61,18 @@ void write_lcp(char *filename, int_t *p, uint_t n)
   fclose(lcp);
 }
 
-static void read_input_bytes(FILE *f, uint_t n, uint8_t *x, const char *fnam)
+// read and compact the alphabet, return alphabet size
+static uint_t  read_input_bytes(FILE *f, uint_t n, uint8_t *x, const char *fnam)
 {
   rewind(f);
   if (fread(x, 1, (size_t)n, f) != (size_t)n) {
     perror(fnam);
-    return 1;
+    exit(1);
   }
   // check which symbols appear in the input and remap them to a compact alphabet
   unsigned char q[UINT8_MAX + 1] = {0}; // track chars 
-  for (idx_t i=0; i < n; ++i) q[x[i]] = 1;
-  idx_t kk = 0;
+  for (uint_t i=0; i < n; ++i) q[x[i]] = 1;
+  uint_t kk = 0;
   for (int i = 0; i <= UINT8_MAX; ++i)
     if (q[i]) q[i] = kk++; // assign new compacted symbol values to the chars that appear in the input
   if(kk==UINT8_MAX + 1) {
@@ -79,13 +80,13 @@ static void read_input_bytes(FILE *f, uint_t n, uint8_t *x, const char *fnam)
     exit(1);
   }
   assert(q[UINT8_MAX]<UINT8_MAX);
-  for (idx_t i=0; i < n; ++i)
+  for (uint_t i=0; i < n; ++i)
     x[i] = q[x[i]] + 1;
-  return;
+  return kk; 
 }
 
 
-// read and remap alphabet to 1..maxv+1
+// read and remap alphabet to 1..maxv+1 return new alphabet size
 static uint_t read_input_uint16(FILE *f, uint_t n, int_t *x, uint16_t *tmp16, const char *fnam)
 {
   rewind(f);
@@ -107,7 +108,7 @@ static uint_t read_input_uint16(FILE *f, uint_t n, int_t *x, uint16_t *tmp16, co
   return (uint_t)(maxv - minv + 2); 
 }
 
-// read and remap alphabet to 1..maxv+1
+// read and remap alphabet to 1..maxv+1, return new alphabet size 
 static uint_t read_input_int32(FILE *f, uint_t n, int_t *x, int32_t *tmp32, const char *fnam)
 {
   rewind(f);
@@ -206,6 +207,8 @@ int main(int argc, char *argv[])
     fprintf(stderr,"Error: cannot use both -x and -i options together\n");
     return 1;
   }
+  if(Verbose>1) 
+    fprintf(stderr,"Alphabet type: %s\n", input_is_int ? "int32" : (input_is_16bit ? "uint16" : "uint8"));
 
   // read size and adjust it 
    if (! (f=fopen(fnam, "rb"))) {
@@ -247,7 +250,9 @@ int main(int argc, char *argv[])
   else if (input_is_int)
     alpha_size = read_input_int32(f, n, (int_t *)x, (int32_t *) p, fnam); 
   else 
-    read_input_bytes(f,n, (uint8_t *) x, fname);
+    alpha_size = read_input_bytes(f,n, (uint8_t *) x, fnam);
+  fclose(f);
+  if(Verbose) fprintf(stderr,"Alphabet size: %lld\n", (long long) alpha_size);
    
   /* ---------  start measuring time ------------- */
   start_time = times(&st);
@@ -259,7 +264,7 @@ int main(int argc, char *argv[])
       return 1;
     }
   }
-  else lcp=NULL: // no lcp requested 
+  else lcp=NULL; // no lcp requested 
     
   if (input_is_int || input_is_16bit) {
     int_t *s = (int_t *) x;
