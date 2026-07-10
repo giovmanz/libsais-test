@@ -13,6 +13,7 @@
    Runinng time: truly linear 
    >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> */
 #define _GNU_SOURCE
+#define LIBSAIS_OPENMP
 #include <stdlib.h>
 #include <stdio.h>
 #include <limits.h>
@@ -33,21 +34,6 @@ typedef int64_t  idx_t;
 typedef int32_t  idx_t;
 #endif
 
-#ifdef USE_INT64
-int64_t libsais64(const uint8_t * T, int64_t * SA, int64_t n, int64_t fs, int64_t * freq);
-int64_t libsais64_plcp(const uint8_t * T, const int64_t * SA, int64_t * PLCP, int64_t n);
-int64_t libsais64_lcp(const int64_t * PLCP, const int64_t * SA, int64_t * LCP, int64_t n);
-int64_t libsais16x64(const uint16_t * T, int64_t * SA, int64_t n, int64_t fs, int64_t * freq);
-int64_t libsais16x64_plcp(const uint16_t * T, const int64_t * SA, int64_t * PLCP, int64_t n);
-int64_t libsais16x64_lcp(const int64_t * PLCP, const int64_t * SA, int64_t * LCP, int64_t n);
-#else
-int32_t libsais(const uint8_t * T, int32_t * SA, int32_t n, int32_t fs, int32_t * freq);
-int32_t libsais_plcp(const uint8_t * T, const int32_t * SA, int32_t * PLCP, int32_t n);
-int32_t libsais_lcp(const int32_t * PLCP, const int32_t * SA, int32_t * LCP, int32_t n);
-int32_t libsais16(const uint16_t * T, int32_t * SA, int32_t n, int32_t fs, int32_t * freq);
-int32_t libsais16_plcp(const uint16_t * T, const int32_t * SA, int32_t * PLCP, int32_t n);
-int32_t libsais16_lcp(const int32_t * PLCP, const int32_t * SA, int32_t * LCP, int32_t n);
-#endif
 
 #define DBL_CLK_TCK ((double) sysconf(_SC_CLK_TCK)) // clocks x secs 
 int Verbose=0;
@@ -98,7 +84,7 @@ int main(int argc, char *argv[])
    extern int optind, optopt;
    char *fnam;
    FILE *f;
-   int input_is_16bit = 0;
+   int input_is_16bit = 0, num_threads = 0, extra_space = 16;
 
   /* ------------ set default values ------------- */
   char *sa_filename = NULL;
@@ -106,7 +92,7 @@ int main(int argc, char *argv[])
   int compute_avg_lcp = 0;
 
   /* ------------- read options from command line ----------- */
-  while ((c=getopt(argc, argv, "vw:W:ax")) != -1) {
+  while ((c=getopt(argc, argv, "vw:W:axt:")) != -1) {
     switch (c) 
       {
       case 'w':
@@ -115,8 +101,8 @@ int main(int argc, char *argv[])
         lcp_filename = optarg; break;
       case 'x':
         input_is_16bit = 1; break;
-      // case 't':
-      //   NumTreads = atoi(optarg); break;
+      case 't':
+        num_threads = atoi(optarg); break;
       case 'v':
         Verbose++; break;
       case 'a':
@@ -133,6 +119,7 @@ int main(int argc, char *argv[])
     fprintf(stderr, "Usage:\n\t%s [-w safile][-W lcpfile][-x][-v][-a] file\n\n",argv[0]);
     fprintf(stderr,"\t-w safile   write sa to safile\n");    
     fprintf(stderr,"\t-W lcpfile  write lcp to lcpfile\n");
+    fprintf(stderr,"\t-t threads  # helper threads [def. don't use omp functions]\n");    
     fprintf(stderr,"\t-x          read input as sequence of uint16_t values\n");
     fprintf(stderr,"\t-a          compute and print average LCP value\n");   
     fprintf(stderr,"\t-v          produces a verbose output\n\n");
@@ -165,7 +152,7 @@ int main(int argc, char *argv[])
       return 1;
    }
    // allocate space for SA
-   p=malloc((size_t) (n+1)*sizeof *p);
+   p=malloc((size_t) (n+extra_space)*sizeof *p);
    if (! p) {
       fprintf(stderr, "malloc failed\n");
       return 1;
@@ -191,15 +178,19 @@ int main(int argc, char *argv[])
   int32_t e;
   if (input_is_16bit) {
     #ifdef USE_INT64
-    e = libsais16x64((const uint16_t *)x, p, n, 1, NULL);
+    if(num_threads==0) e = libsais16x64((const uint16_t *)x, p, n, extra_space, NULL);
+    else e = libsais16x64_omp((const uint16_t *)x, p, n, extra_space, NULL, num_threads);
     #else
-    e = libsais16((const uint16_t *)x, p, n, 1, NULL);
+    if(num_threads==0) e = libsais16((const uint16_t *)x, p, n, extra_space, NULL);
+    else e = libsais16_omp((const uint16_t *)x, p, n, extra_space, NULL, num_threads);
     #endif
   } else {
     #ifdef USE_INT64
-    e = libsais64((const uint8_t *)x, p, n, 1, NULL);
+    if(num_threads==0) e = libsais64((const uint8_t *)x, p, n, extra_space, NULL);
+    else e = libsais64_omp((const uint8_t *)x, p, n, extra_space, NULL,num_threads);
     #else
-    e = libsais((const uint8_t *)x, p, n, 1, NULL);
+    if(num_threads==0)   e = libsais((const uint8_t *)x, p, n, extra_space, NULL);
+    else e = libsais_omp((const uint8_t *)x, p, n, extra_space, NULL,num_threads);
     #endif
   }
   if(e<0) {
@@ -226,27 +217,36 @@ int main(int argc, char *argv[])
     if(Verbose>1) fprintf(stderr,"Computing lcp array\n");
     if (input_is_16bit) {
       #ifdef USE_INT64
-      e = libsais16x64_plcp((const uint16_t *)x, p, plcp, n);
-      if(e<0) {fprintf(stderr,"Error: libsais16x64_plcp returned %d\n", e); free(x); free(p); free(plcp); return 1;}
-      e = libsais16x64_lcp(plcp, p, p, n);
-      if(e<0) {fprintf(stderr,"Error: libsais16x64_lcp returned %d\n", e); free(x); free(p); free(plcp); return 1;}
+      if(num_threads==0) e = libsais16x64_plcp((const uint16_t *)x, p, plcp, n);
+      else e = libsais16x64_plcp_omp((const uint16_t *)x, p, plcp, n, num_threads);
+      if(e<0) {fprintf(stderr,"Error: libsais16x64_plcp?omp? returned %d\n", e); free(x); free(p); free(plcp); return 1;}
+      if(num_threads==0) e = libsais16x64_lcp(plcp, p, p, n);
+      else e = libsais16x64_lcp_omp(plcp, p, p, n, num_threads);
+      if(e<0) {fprintf(stderr,"Error: libsais16x64_lcp?omp? returned %d\n", e); free(x); free(p); free(plcp); return 1;}
       #else
-      e = libsais16_plcp((const uint16_t *)x, p, plcp, n);
-      if(e<0) {fprintf(stderr,"Error: libsais16_plcp returned %d\n", e); free(x); free(p); free(plcp); return 1;}
-      e = libsais16_lcp(plcp, p, p, n);
-      if(e<0) {fprintf(stderr,"Error: libsais16_lcp returned %d\n", e); free(x); free(p); free(plcp); return 1;}
+      if(num_threads==0) e = libsais16_plcp((const uint16_t *)x, p, plcp, n);
+      else e = libsais16_plcp_omp((const uint16_t *)x, p, plcp, n, num_threads);
+      if(e<0) {fprintf(stderr,"Error: libsais16_plcp?omp? returned %d\n", e); free(x); free(p); free(plcp); return 1;}
+      if(num_threads==0) e = libsais16_lcp(plcp, p, p, n);
+      else e = libsais16_lcp_omp(plcp, p, p, n, num_threads);
+      if(e<0) {fprintf(stderr,"Error: libsais16_lcp?omp? returned %d\n", e); free(x); free(p); free(plcp); return 1;}
       #endif
-    } else {
+    } 
+    else { // input is 8 bit
       #ifdef USE_INT64
-      e = libsais64_plcp((const uint8_t *)x, p, plcp, n);
-      if(e<0) {fprintf(stderr,"Error: libsais64_plcp returned %d\n", e); free(x); free(p); free(plcp); return 1;}
-      e = libsais64_lcp(plcp, p, p, n);
-      if(e<0) {fprintf(stderr,"Error: libsais64_lcp returned %d\n", e); free(x); free(p); free(plcp); return 1;}
+      if(num_threads==0) e = libsais64_plcp((const uint8_t *)x, p, plcp, n);
+      else e = libsais64_plcp_omp((const uint8_t *)x, p, plcp, n, num_threads);
+      if(e<0) {fprintf(stderr,"Error: libsais64_plcp?omp? returned %d\n", e); free(x); free(p); free(plcp); return 1;}
+      if(num_threads==0) e = libsais64_lcp(plcp, p, p, n);
+      else e = libsais64_lcp_omp(plcp, p, p, n, num_threads);
+      if(e<0) {fprintf(stderr,"Error: libsais64_lcp?omp? returned %d\n", e); free(x); free(p); free(plcp); return 1;}
       #else
-      e = libsais_plcp((const uint8_t *)x, p, plcp, n);
-      if(e<0) {fprintf(stderr,"Error: libsais_plcp returned %d\n", e); free(x); free(p); free(plcp); return 1;}
-      e = libsais_lcp(plcp, p, p, n);
-      if(e<0) {fprintf(stderr,"Error: libsais_lcp returned %d\n", e); free(x); free(p); free(plcp); return 1;}
+      if(num_threads==0) e = libsais_plcp((const uint8_t *)x, p, plcp, n);
+      else e = libsais_plcp_omp((const uint8_t *)x, p, plcp, n, num_threads);
+      if(e<0) {fprintf(stderr,"Error: libsais_plcp?omp? returned %d\n", e); free(x); free(p); free(plcp); return 1;}
+      if(num_threads==0) e = libsais_lcp(plcp, p, p, n);
+      else e = libsais_lcp_omp(plcp, p, p, n, num_threads);
+      if(e<0) {fprintf(stderr,"Error: libsais_lcp?omp? returned %d\n", e); free(x); free(p); free(plcp); return 1;}
       #endif
     }
     end_time = times(&en);

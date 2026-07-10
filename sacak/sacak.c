@@ -174,8 +174,6 @@ int main(int argc, char *argv[])
         input_is_16bit = 1; break;
       case 'i':
         input_is_int = 1; break;
-      // case 't':
-      //   NumTreads = atoi(optarg); break;
       case 'v':
         Verbose++; break;
       case 'a':

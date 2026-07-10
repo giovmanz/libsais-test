@@ -6,7 +6,7 @@ CC=gcc
 # CFLAGS = -g -O3 -Wall -Winline -std=c11 -pthread
 
 #these are for maximum speed
-CFLAGS = -g -O3 -march=native -Wall -Winline -std=c11 -pthread -fomit-frame-pointer -DNDEBUG
+CFLAGS = -g -O3 -march=native -Wall -Winline -std=c11 -fopenmp -fomit-frame-pointer -DNDEBUG
 
 # these are for profiling
 # CFLAGS = -g -pg -O2 -Wall -Winline  -std=c11 -pthread -fno-omit-frame-pointer -DNDEBUG
