@@ -1,33 +1,38 @@
 # Test programs for libsais
 
-to enable omp, in Cmakelisis.txt set 
-
+Note: omp was enabled in `CMakeLists`.txt` setting: 
+```
 option(LIBSAIS_USE_OPENMP "Use OpenMP for parallelization" ON)
+```
 
-
-
-Compile the `libsais.a` library
+To compile the `libsais.a` library:
 ```bash
 mkdir build; cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang
-make  VERBOSE=1
+cmake .. -DCMAKE_BUILD_TYPE=Release 
+make VERBOSE=1
 ```
-then the `saisXX` test programs:
+To compile `sais` and `sais64` test programs:
 ```bash
 cd  ..
 make
 ```
 To compute sa and lcp arrays for a set of files (and write their sha1sum to `sha1.out`):
 ```bash
-./saLcp.sh sais exe_with_options file1 [file2 ...]
+./saLcp.sh exe_with_options file1 [file2 ...]
 ```
 for example
 ```
-./saLcp.sh "sais -v" corpus/*
+./saLcp.sh "sais -va" corpus/*
 ```
 
 
 
+TODO:
+
+Test compilation with clang:
+```
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang
+```
 
 ----------------------------------------
 

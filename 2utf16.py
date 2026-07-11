@@ -11,7 +11,25 @@ Supports output size limits via command-line multiplier suffixes (K, M, G, T).
 
 import sys
 import os
+import lzma
+import gzip
+import bz2
 import numpy as np
+
+
+def open_text(input_path):
+    """
+    Open a text file for reading, transparently streaming through xz/gz/bz2
+    decompression based on file extension (without ever materializing the
+    fully decompressed data on disk or in memory).
+    """
+    if input_path.endswith('.xz'):
+        return lzma.open(input_path, 'rt', encoding='utf-8', errors='replace')
+    if input_path.endswith('.gz'):
+        return gzip.open(input_path, 'rt', encoding='utf-8', errors='replace')
+    if input_path.endswith('.bz2'):
+        return bz2.open(input_path, 'rt', encoding='utf-8', errors='replace')
+    return open(input_path, 'r', encoding='utf-8', errors='replace')
 
 
 def parse_size(size_str):
@@ -62,7 +80,7 @@ def utf8_to_uint16_array_chunked(input_path, output_path, max_output_size=None, 
     total_unique = set()
     
     with open(output_path, 'wb') as out_f:
-        with open(input_path, 'r', encoding='utf-8', errors='replace') as in_f:
+        with open_text(input_path) as in_f:
             while True:
                 # Read chunk
                 chunk = in_f.read(chunk_size)
