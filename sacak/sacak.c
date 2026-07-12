@@ -294,14 +294,16 @@ int main(int argc, char *argv[])
   if(lcp!=NULL) {
     if(lcp_filename!=NULL)
       write_lcp(lcp_filename, lcp+1, n);
-    
+
     if(compute_avg_lcp) {
-      double sum = 0.0;
+      long long psum = 0;
+      double sum = 0;
       for(uint_t i = 1; i <= n; i++) {
-        sum += lcp[i];
+        psum += lcp[i];
+        if(psum > (1L << 30)) {sum += psum; psum=0;} // avoid overflow
       }
-      double avg = (n > 0) ? sum / n : 0.0;
-      printf("Average LCP: %f\n", avg);
+      sum += psum;
+      printf("Average LCP: %f\n", sum / n);
     }
     free(lcp); 
   }
