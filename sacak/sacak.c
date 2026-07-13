@@ -64,7 +64,6 @@ void write_lcp(char *filename, int_t *p, uint_t n)
 // read and compact the alphabet, return alphabet size
 static uint_t  read_input_bytes(FILE *f, uint_t n, uint8_t *x, const char *fnam)
 {
-  rewind(f);
   if (fread(x, 1, (size_t)n, f) != (size_t)n) {
     perror(fnam);
     exit(1);
@@ -89,7 +88,6 @@ static uint_t  read_input_bytes(FILE *f, uint_t n, uint8_t *x, const char *fnam)
 // read and remap alphabet to 1..maxv+1 return new alphabet size
 static uint_t read_input_uint16(FILE *f, uint_t n, int_t *x, uint16_t *tmp16, const char *fnam)
 {
-  rewind(f);
   if (fread(tmp16, sizeof(uint16_t), (size_t)n, f) != (size_t)n) {
     perror(fnam);
     exit(1);
@@ -111,7 +109,6 @@ static uint_t read_input_uint16(FILE *f, uint_t n, int_t *x, uint16_t *tmp16, co
 // read and remap alphabet to 1..maxv+1, return new alphabet size 
 static uint_t read_input_int32(FILE *f, uint_t n, int_t *x, int32_t *tmp32, const char *fnam)
 {
-  rewind(f);
   if (fread(tmp32, sizeof(uint32_t), (size_t)n, f) != (size_t)n) {
     perror(fnam);
     exit(1);
@@ -242,6 +239,7 @@ int main(int argc, char *argv[])
    }
 
   /* handle different input formats */
+  rewind(f);
   uint_t alpha_size = 0; // only used for sacak_int and sacak_lcp_int
   if (input_is_16bit) 
     alpha_size = read_input_uint16(f, n, (int_t *)x, (uint16_t *) p, fnam);
