@@ -71,6 +71,38 @@ void write_lcp(char *filename, idx_t *p, idx_t n)
   fclose(lcp);
 }
 
+// read and remap alphabet to 1..maxv+1, return new alphabet size 
+static idx_t read_input_int32(FILE *f, idx_t n, void *x, int32_t *tmp32, const char *fnam)
+{
+  if (fread(tmp32, sizeof(uint32_t), (size_t)n, f) != (size_t)n) {
+    perror(fnam);
+    exit(1);
+  }
+  // compute min and max values
+  int32_t minv = tmp32[0], maxv = tmp32[0];
+  for (uint_t ii = 1; ii < n; ii++) {
+    if (tmp32[ii] < minv) minv = tmp32[ii];
+    if (tmp32[ii] > maxv) maxv = tmp32[ii];
+  }
+  if(minv < 0) {
+    fprintf(stderr, "%s: input file contains a value larger than INT32_MAX\n", fnam);
+    exit(1);
+  }
+  uint_t range = (uint_t)(maxv - minv) + 1;
+  if(range > (uint_t)I_MAX) {
+    fprintf(stderr, "%s: input file contains a range of symbols larger than INT32_MAX, use -DM64\n", fnam);
+    // note: it is bad that -D64 forces the input to be stored in an unint64_t array but here we take advantage of this
+    exit(1);
+  }
+  // copy and remap text 
+  for (uint_t ii = 0; ii < n; ii++) {
+    x[ii] = ((int_t) tmp32[ii]) - minv + 1; // remap to 1..maxv-minv+1
+    assert(x[ii] > 0 && x[ii] <= range);
+  }
+  return range+1; 
+}
+
+
 
 int main(int argc, char *argv[])
 {
@@ -84,7 +116,8 @@ int main(int argc, char *argv[])
    extern int optind, optopt;
    char *fnam;
    FILE *f;
-   int input_is_16bit = 0, num_threads = 0, extra_space = 16;
+   int input_is_16bit = 0, input_is_int32 = 0, num_threads = 0;
+   int sa_extra_space = 6*1024; // as suggested in libsais64_long() for optimal performance with integer alphabet
 
   /* ------------ set default values ------------- */
   char *sa_filename = NULL;
@@ -92,8 +125,8 @@ int main(int argc, char *argv[])
   int compute_avg_lcp = 0;
 
   /* ------------- read options from command line ----------- */
-  while ((c=getopt(argc, argv, "vw:W:axt:")) != -1) {
-    switch (c) 
+  while ((c=getopt(argc, argv, "vw:W:axit:")) != -1) {
+    switch (c)
       {
       case 'w':
         sa_filename = optarg; break;
@@ -101,6 +134,8 @@ int main(int argc, char *argv[])
         lcp_filename = optarg; break;
       case 'x':
         input_is_16bit = 1; break;
+      case 'i':
+        input_is_int32 = 1; break;
       case 't':
         num_threads = atoi(optarg); break;
       case 'v':
@@ -113,15 +148,20 @@ int main(int argc, char *argv[])
       }
   }
   // printf("Verbose: %d, Helper threads: %d, Group threshold: %d, MKq threshold: %d\n", Verbose, NumTreads, GrpThresh, MkqThresh);
+  if(input_is_16bit && input_is_int32) {
+    fprintf(stderr, "Error: -x and -i are mutually exclusive\n");
+    exit(1);
+  }
   if(optind<argc)
     fnam=argv[optind];
   else {
-    fprintf(stderr, "Usage:\n\t%s [-w safile][-W lcpfile][-x][-v][-a] file\n\n",argv[0]);
-    fprintf(stderr,"\t-w safile   write sa to safile\n");    
+    fprintf(stderr, "Usage:\n\t%s [-w safile][-W lcpfile][-x|-i][-v][-a] file\n\n",argv[0]);
+    fprintf(stderr,"\t-w safile   write sa to safile\n");
     fprintf(stderr,"\t-W lcpfile  write lcp to lcpfile\n");
-    fprintf(stderr,"\t-t threads  # helper threads [def. don't use omp functions]\n");    
+    fprintf(stderr,"\t-t threads  # helper threads [def. don't use omp functions]\n");
     fprintf(stderr,"\t-x          read input as sequence of uint16_t values\n");
-    fprintf(stderr,"\t-a          compute and print average LCP value\n");   
+    fprintf(stderr,"\t-i          read input as sequence of int32_t values (integer alphabet)\n");
+    fprintf(stderr,"\t-a          compute and print average LCP value\n");
     fprintf(stderr,"\t-v          produces a verbose output\n\n");
     return 0;
   }
@@ -131,8 +171,8 @@ int main(int argc, char *argv[])
       fprintf(stderr,"%s ",argv[c]);
     fprintf(stderr,"\n");
   }
-  if(Verbose>1) 
-    fprintf(stderr,"Alphabet type: %s\n", (input_is_16bit ? "uint16" : "uint8"));
+  if(Verbose>1)
+    fprintf(stderr,"Alphabet type: %s\n", (input_is_16bit ? "uint16" : (input_is_int32 ? "int32" : "uint8")));
 
    if (! (f=fopen(fnam, "rb"))) {
       perror(fnam);
@@ -151,43 +191,86 @@ int main(int argc, char *argv[])
       fprintf(stderr, "%s: input file size is not a multiple of 2 bytes\n", fnam);
       return 1;
    }
+   if (input_is_int32 && n % 4 != 0) {
+      fprintf(stderr, "%s: input file size is not a multiple of 4 bytes\n", fnam);
+      return 1;
+   }
    // allocate space for SA
-   p=malloc((size_t) (n+extra_space)*sizeof *p);
+   p=malloc((size_t) (n+sa_extra_space)*sizeof *p);
    if (! p) {
       fprintf(stderr, "malloc failed\n");
       return 1;
    }
-   // allocate and read text with space for one extra symbol
-   if (input_is_16bit) x=malloc((size_t) (n/2 + 1)*sizeof(uint16_t));
-   else x=malloc((size_t) (n+1)*sizeof(uint8_t));
+   // allocate text, a number of bytes equal to the file length
+   x=malloc((size_t) n*sizeof(uint8_t));
    if (! x) {
       fprintf(stderr, "malloc failed\n");
-      free(p);
+      free(p); 
       return 1;
    }
-   // read text
+   // read text 
    rewind(f);
-   if(fread(x, sizeof(uint8_t), (size_t)n, f)!=(size_t)n) {
-       perror(fnam);free(x); free(p);
-       return 1;
+   idx_t k = 0;  // alphabet size for integer input
+   if(input_is_int32) 
+     k = read_input_int32(f, n, x, (int32_t *) p, fnam); // use p as a temporary buffer
+   else { // uint8 or uint16 input 
+     if(fread(x, sizeof(uint8_t), (size_t)n, f)!=(size_t)n) {
+         perror(fnam);free(x); free(p);
+         return 1;
+     }
    }
    if(input_is_16bit) n /= 2;
+   else if(input_is_int32) n /= 4;
+
+   // for integer alphabet input, determine k = alphabet size (max value + 1)
+   idx_t int32_k = 0;
+   if (input_is_int32) {
+     int32_t *xi = (int32_t *)x;
+     for (idx_t i = 0; i < n; i++) {
+       if (xi[i] < 0) {
+         fprintf(stderr, "%s: int32 input must contain only non-negative values (symbol %lld at position %lld)\n",
+                 fnam, (long long)xi[i], (long long)i);  free(x); free(p);
+         return 1;
+       }
+       if ((idx_t)xi[i] + 1 > int32_k) int32_k = (idx_t)xi[i] + 1;
+     }
+     if(Verbose>1) fprintf(stderr,"Integer alphabet size (k): %lld\n", (long long)int32_k);
+   }
 
   /* ---------  start measuring time ------------- */
   start_time = times(&st);
   int32_t e;
-  if (input_is_16bit) {
+  if (input_is_int32) {
     #ifdef USE_INT64
-    if(num_threads==0) e = libsais16x64((const uint16_t *)x, p, n, extra_space, NULL);
-    else e = libsais16x64_omp((const uint16_t *)x, p, n, extra_space, NULL, num_threads);
+    // libsais64.h only offers libsais64_long/libsais64_long_omp for integer
+    // alphabets, which require a widened int64_t copy of T
+    int64_t *T64 = malloc((size_t)(n+sa_extra_space)*sizeof(int64_t));
+    if (!T64) {
+      fprintf(stderr, "malloc failed\n");
+      free(x); free(p);
+      return 1;
+    }
+    int32_t *xi = (int32_t *)x;
+    for (idx_t i = 0; i < n; i++) T64[i] = xi[i];
+    if(num_threads==0) e = (int32_t) libsais64_long(T64, p, n, int32_k, sa_extra_space);
+    else e = (int32_t) libsais64_long_omp(T64, p, n, int32_k, sa_extra_space, num_threads);
+    free(T64);
+    #else
+    if(num_threads==0) e = libsais_int((int32_t *)x, p, n, int32_k, extra_space);
+    else e = libsais_int_omp((int32_t *)x, p, n, int32_k, extra_space, num_threads);
+    #endif
+  } else if (input_is_16bit) {
+    #ifdef USE_INT64
+    if(num_threads==0) e = libsais16x64((const uint16_t *)x, p, n, sa_extra_space, NULL);
+    else e = libsais16x64_omp((const uint16_t *)x, p, n, sa_extra_space, NULL, num_threads);
     #else
     if(num_threads==0) e = libsais16((const uint16_t *)x, p, n, extra_space, NULL);
     else e = libsais16_omp((const uint16_t *)x, p, n, extra_space, NULL, num_threads);
     #endif
-  } else {
+  } else { // 8bit input
     #ifdef USE_INT64
-    if(num_threads==0) e = libsais64((const uint8_t *)x, p, n, extra_space, NULL);
-    else e = libsais64_omp((const uint8_t *)x, p, n, extra_space, NULL,num_threads);
+    if(num_threads==0) e = libsais64((const uint8_t *)x, p, n, sa_extra_space, NULL);
+    else e = libsais64_omp((const uint8_t *)x, p, n, sa_extra_space, NULL,num_threads);
     #else
     if(num_threads==0)   e = libsais((const uint8_t *)x, p, n, extra_space, NULL);
     else e = libsais_omp((const uint8_t *)x, p, n, extra_space, NULL,num_threads);
@@ -215,7 +298,23 @@ int main(int argc, char *argv[])
       return 1;
     }  
     if(Verbose>1) fprintf(stderr,"Computing lcp array\n");
-    if (input_is_16bit) {
+    if (input_is_int32) {
+      #ifdef USE_INT64
+      fprintf(stderr, "Error: LCP computation for int32 input is not supported when 64-bit "
+                       "indices are required (n > 2^31-1) - libsais64.h has no plcp function "
+                       "for integer-alphabet input.\n");
+      free(x); free(p); free(plcp);
+      return 1;
+      #else
+      if(num_threads==0) e = libsais_plcp_int((const int32_t *)x, p, plcp, n);
+      else e = libsais_plcp_int_omp((const int32_t *)x, p, plcp, n, num_threads);
+      if(e<0) {fprintf(stderr,"Error: libsais_plcp_int?omp? returned %d\n", e); free(x); free(p); free(plcp); return 1;}
+      if(num_threads==0) e = libsais_lcp(plcp, p, p, n);
+      else e = libsais_lcp_omp(plcp, p, p, n, num_threads);
+      if(e<0) {fprintf(stderr,"Error: libsais_lcp?omp? returned %d\n", e); free(x); free(p); free(plcp); return 1;}
+      #endif
+    }
+    else if (input_is_16bit) {
       #ifdef USE_INT64
       if(num_threads==0) e = libsais16x64_plcp((const uint16_t *)x, p, plcp, n);
       else e = libsais16x64_plcp_omp((const uint16_t *)x, p, plcp, n, num_threads);
