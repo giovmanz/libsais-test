@@ -141,7 +141,7 @@ static uint_t read_input_int32(FILE *f, uint_t n, int_t *x, int32_t *tmp32, cons
 int main(int argc, char *argv[])
 {
   void *x;
-  uint_t  *p, n;
+  uint_t  *p;
   int_t *lcp= NULL;
   int c, e;
   int input_is_16bit = 0;
@@ -214,7 +214,7 @@ int main(int argc, char *argv[])
       perror(fnam);
       return 1;
    }
-   n=ftello(f);
+   off_t n=ftello(f);
    if(input_is_16bit==1) {
       if(n%2!=0) { fprintf(stderr, "%s: file size not a multiple of 2 (uint16 mode)\n", fnam); return 1; }
       n /= 2;
@@ -226,6 +226,15 @@ int main(int argc, char *argv[])
       fprintf(stderr, "%s: file empty\n", fnam);
       return 0;
    }
+  #ifndef DM64
+  if(n > UINT32_MAX) {
+    fprintf(stderr, "%s: input file too large for 32 bit version, use 64 bit version\n", fnam);
+    return 1;
+  }
+  #endif
+
+
+
    // allocation 
    p=malloc((size_t) (n+1)*sizeof *p);
    if(input_is_16bit || input_is_int) {

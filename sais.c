@@ -1,15 +1,18 @@
 /* >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>   
    Test suffix sorting and LCP building with libsais
       
-   Reads a sequence of unsigned bytes/short/int from
-   a file and compute SA and LCP array
-   here using the sais+plcp (from libsais) algorithm  
+   Reads a sequence of unsigned bytes/short/int from a file
+   and compute SA and LCP array using the sais+plcp (from libsais) algorithm  
 
-   Note This implementationcan work with 32 bits for inputs of size ar most 2**31-1, 
+   Note: this implementationcan work with 32 bits for inputs of size ar most 2**31-1, 
    for larger files we need to switch to 64 bits (for both SA and LCP)
    Space usage 
      8bit input:  T + SA + LCP: 9n bytes 32bit, 17n 64bit
-    16bit input: T + SA + LCP: 10n bytes 32bit, 18n 64bit (to be ckecked)
+    16bit input: T + SA + LCP: 10n bytes 32bit, 18n 64bit 
+    32bit input: T + SA + LCP: 12n bytes 32bit
+    The 64 bit version sotre the text in a 64bit array so space usage is 24n
+    The 64 bit version do not support the computation of the LCP array for 32bit input
+    Still need to explore the effect of teh alphabet size on the space usage
    Runinng time: truly linear 
    >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> */
 #define _GNU_SOURCE
@@ -112,7 +115,7 @@ static idx_t read_input_int32(FILE *f, idx_t n, void *xv, int32_t *tmp32, const 
 int main(int argc, char *argv[])
 {
   void *x;
-  idx_t  *p, n;
+  idx_t  *p;
   int c;
   clock_t end_time,start_time;
   struct tms en, st;   
@@ -187,7 +190,7 @@ int main(int argc, char *argv[])
     perror(fnam);
     return 1;
   }
-  n=ftello(f);
+  off_t n=ftello(f);
   if(input_is_16bit) {
     if(n%2!=0) { fprintf(stderr, "%s: file size not a multiple of 2 (uint16 mode)\n", fnam); return 1; }
     n /= 2;
@@ -199,6 +202,12 @@ int main(int argc, char *argv[])
     fprintf(stderr, "%s: file empty\n", fnam);
     return 0;
   }
+  #ifndef USE_INT64
+  if(n > INT32_MAX) {
+    fprintf(stderr, "%s: input file too large for 32 bit version, use 64 bit version\n", fnam);
+    return 1;
+  }
+  #endif
 
   // allocate space for SA
   p=malloc((size_t) (n+sa_extra_space)*sizeof *p);
