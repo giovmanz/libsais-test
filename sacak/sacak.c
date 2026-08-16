@@ -4,7 +4,7 @@
    support 8 bit input (not the full range 0..255) because we need a distinct eof
    support 16 bit input stored in an int_t text array (so the full range 0..65535 is supported)
    support 32 bit input stored in an int_t text array: the 32 bit version support the 
-   range 0..2^31-2, while the 64 bit version support the full range 0..2^31-1 
+           range 0..2^31-2, while the 64 bit version support the full range 0..2^31-1 
    
    TODO:
      in saca_int the text is stored in a signed array, is that necessary? 
@@ -92,7 +92,7 @@ static uint_t read_input_uint16(FILE *f, uint_t n, int_t *x, uint16_t *tmp16, co
     perror(fnam);
     exit(1);
   }
-  // compute min and max values
+  // compute min and max values (maybe remap into smallest possible alphabet?)
   uint16_t minv = tmp16[0], maxv = tmp16[0];
   for (uint_t ii = 1; ii < n; ii++) {
     if (tmp16[ii] < minv) minv = tmp16[ii];
@@ -126,7 +126,7 @@ static uint_t read_input_int32(FILE *f, uint_t n, int_t *x, int32_t *tmp32, cons
   uint_t range = (uint_t)(maxv - minv) + 1;
   if(range > (uint_t)I_MAX) {
     fprintf(stderr, "%s: input file contains a range of symbols larger than INT32_MAX, use -DM64\n", fnam);
-    // note: it is bad that -D64 forces the input to be stored in an unint64_t array but here we take advantage of this
+    // note: it is bad that -DM64 forces the input to be stored in an unint64_t array but here we take advantage of this
     exit(1);
   }
   // copy and remap text 
@@ -206,34 +206,33 @@ int main(int argc, char *argv[])
     fprintf(stderr,"Alphabet type: %s\n", input_is_int ? "int32" : (input_is_16bit ? "uint16" : "uint8"));
 
   // read size and adjust it 
-   if (! (f=fopen(fnam, "rb"))) {
-      perror(fnam);
-      return 1;
-   }
-   if (fseeko(f, 0L, SEEK_END)) {
-      perror(fnam);
-      return 1;
-   }
-   off_t n=ftello(f);
-   if(input_is_16bit==1) {
-      if(n%2!=0) { fprintf(stderr, "%s: file size not a multiple of 2 (uint16 mode)\n", fnam); return 1; }
-      n /= 2;
-   } else if(input_is_int==2) {
-      if(n%4!=0) { fprintf(stderr, "%s: file size not a multiple of 4 (int32 mode)\n", fnam); return 1; }
-      n /= 4;
-   }
-   if (n==0) {
-      fprintf(stderr, "%s: file empty\n", fnam);
-      return 0;
-   }
-  #ifndef DM64
+  if (! (f=fopen(fnam, "rb"))) {
+    perror(fnam);
+    return 1;
+  }
+  if (fseeko(f, 0L, SEEK_END)) {
+    perror(fnam);
+    return 1;
+  }
+  off_t n=ftello(f);
+  if(input_is_16bit==1) {
+    if(n%2!=0) { fprintf(stderr, "%s: file size not a multiple of 2 (uint16 mode)\n", fnam); return 1; }
+    n /= 2;
+  } else if(input_is_int==2) {
+    if(n%4!=0) { fprintf(stderr, "%s: file size not a multiple of 4 (int32 mode)\n", fnam); return 1; }
+    n /= 4;
+  }
+  if (n==0) {
+    fprintf(stderr, "%s: file empty\n", fnam);
+    return 0;
+  }
+  if(Verbose>1) fprintf(stderr,"Input size: %lld\n", (long long) n);
+  #ifndef M64
   if(n > UINT32_MAX) {
     fprintf(stderr, "%s: input file too large for 32 bit version, use 64 bit version\n", fnam);
     return 1;
   }
   #endif
-
-
 
    // allocation 
    p=malloc((size_t) (n+1)*sizeof *p);
