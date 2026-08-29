@@ -11,12 +11,19 @@ mkdir build; cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release 
 make VERBOSE=1
 ```
-To compile `sais` and `sais64` test programs:
-```bash
-cd  ..
-make
+
+To compile with clang instead of gcc:
 ```
-To compute sa and lcp arrays for a set of files (and write their sha1sum to `sha1.out`):
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang
+```
+
+## sais and sais64
+
+To compile `sais` and `sais64` test programs just issue `make` on the main project directory.
+The difference between the two programs is that `sais64` uses 64-bit arrays for SA and LCP. 
+Execute the programs without arguments to get a minimal help. 
+
+To compute SA and LCP arrays for a set of files (and write their sha1sum to `sha1.out`):
 ```bash
 ./saLcp.sh exe_with_options file1 [file2 ...]
 ```
@@ -25,14 +32,23 @@ for example
 ./saLcp.sh "sais -va" corpus/*
 ```
 
+## libsais and malloc_count
 
+When supporting `omp` libsais is not compatible with [malloc_count](https://github.com/bingmann/malloc_count). As reported by Claude:
 
-TODO:
+malloc_count only overrides `malloc`, `free`, `calloc`, and `realloc`. It does not override `posix_memalign`, `aligned_alloc`, `memalign`, or `_mm_malloc`/`_mm_free`. libsais, especially in builds with SIMD (AVX2/SSE) or OpenMP support, sometimes allocates its internal working buffers with aligned-allocation functions (for alignment requirements of vectorized code) rather than plain `malloc`. If that's what's happening:
 
-Test compilation with clang:
+ * The aligned allocation call bypasses `malloc_count` entirely (no header/sentinel gets added),
+
+ * But if libsais frees that memory with plain `free()``, that call is intercepted by `malloc_count`, which looks for a sentinel that was never written.
+
+It is confirmed that compiling libsais with
 ```
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang
+option(LIBSAIS_USE_OPENMP "Use OpenMP for parallelization" OFF)
 ```
+solves the problem. 
+
+
 
 ----------------------------------------
 

@@ -7,12 +7,12 @@
    Note: this implementationcan work with 32 bits for inputs of size ar most 2**31-1, 
    for larger files we need to switch to 64 bits (for both SA and LCP)
    Space usage 
-     8bit input:  T + SA + LCP: 9n bytes 32bit, 17n 64bit
+     8bit input: T + SA + LCP: 9n bytes 32bit, 17n 64bit
     16bit input: T + SA + LCP: 10n bytes 32bit, 18n 64bit 
     32bit input: T + SA + LCP: 12n bytes 32bit
-    The 64 bit version sotre the text in a 64bit array so space usage is 24n
-    The 64 bit version do not support the computation of the LCP array for 32bit input
-    Still need to explore the effect of teh alphabet size on the space usage
+    The 64 bit version store the text in a 64bit array so space usage is 24n
+    The 64 bit version does not support the computation of the LCP array for 32bit input
+    Still need to explore the effect of the alphabet size on the space usage
    Runinng time: truly linear 
    >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> */
 #define _GNU_SOURCE
@@ -22,6 +22,7 @@
 #include <limits.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 #include <sys/times.h>
 #include "include/libsais.h"
 #include "include/libsais64.h"
@@ -41,6 +42,13 @@ typedef int32_t  idx_t;
 #define DBL_CLK_TCK ((double) sysconf(_SC_CLK_TCK)) // clocks x secs 
 int Verbose=0;
 
+static void quit(const char *msg) {
+  perror(msg);
+  exit(1);
+}
+
+
+
 /* **********************************************************
    open filename and write p[0] .. p[n-1] using 32 bit
    ********************************************************** */
@@ -52,10 +60,8 @@ void write_sa(char *filename, idx_t *p, idx_t n)
     fprintf(stderr,"Writing sa to file %s\n",filename);
   if((sa=fopen(filename,"wb"))==NULL)  perror(filename);
   size_t c = fwrite(p,sizeof(*p),(size_t)n,sa);
-  if(c!=(size_t)n) {
-    perror("Error writing the sa file");
-    exit(1);
-  }  fclose(sa);
+  if(c!=(size_t)n) quit("Error writing the sa file");
+  fclose(sa);
 }
 
 
@@ -68,8 +74,7 @@ void write_lcp(char *filename, idx_t *p, idx_t n)
   if((lcp=fopen(filename,"w"))==NULL) perror(filename);
   fwrite(p,sizeof(*p),(size_t)n,lcp);
   if(ferror(lcp)) {
-    perror("Error writing the lcp file");
-    exit(1);
+    quit("Error writing the lcp file");
   }
   fclose(lcp);
 }
@@ -78,10 +83,8 @@ void write_lcp(char *filename, idx_t *p, idx_t n)
 static idx_t read_input_int32(FILE *f, idx_t n, void *xv, int32_t *tmp32, const char *fnam)
 {
   // read on a temp buffer
-  if (fread(tmp32, sizeof(uint32_t), (size_t)n, f) != (size_t)n) {
-    perror(fnam);
-    exit(1);
-  }
+  if (fread(tmp32, sizeof(uint32_t), (size_t)n, f) != (size_t)n)
+    quit(fnam);
   // compute min and max values
   int32_t minv = tmp32[0], maxv = tmp32[0];
   for (idx_t ii = 1; ii < n; ii++) {
@@ -125,7 +128,7 @@ int main(int argc, char *argv[])
   char *fnam;
   FILE *f;
   int input_is_16bit = 0, input_is_int32 = 0, num_threads = 0;
-  int sa_extra_space = 6*1024; // as suggested in libsais64_long() for optimal performance with integer alphabet
+  int sa_extra_space = 0; 
 
   /* ------------ set default values ------------- */
   char *sa_filename = NULL;
@@ -182,14 +185,8 @@ int main(int argc, char *argv[])
     fprintf(stderr,"Alphabet type: %s\n", (input_is_16bit ? "uint16" : (input_is_int32 ? "int32" : "uint8")));
 
   // read size and adjust it  
-  if (! (f=fopen(fnam, "rb"))) {
-    perror(fnam);
-    return 1;
-  }
-  if (fseeko(f, 0L, SEEK_END)) {
-    perror(fnam);
-    return 1;
-  }
+  if (! (f=fopen(fnam, "rb"))) quit(fnam);
+  if (fseeko(f, 0L, SEEK_END)) quit(fnam);
   off_t n=ftello(f);
   if(input_is_16bit) {
     if(n%2!=0) { fprintf(stderr, "%s: file size not a multiple of 2 (uint16 mode)\n", fnam); return 1; }
@@ -202,6 +199,7 @@ int main(int argc, char *argv[])
     fprintf(stderr, "%s: file empty\n", fnam);
     return 0;
   }
+  if(Verbose>1) fprintf(stderr,"Input size: %lld\n", (long long) n);
   #ifndef USE_INT64
   if(n > INT32_MAX) {
     fprintf(stderr, "%s: input file too large for 32 bit version, use 64 bit version\n", fnam);
@@ -209,12 +207,6 @@ int main(int argc, char *argv[])
   }
   #endif
 
-  // allocate space for SA
-  p=malloc((size_t) (n+sa_extra_space)*sizeof *p);
-  if (! p) {
-    fprintf(stderr, "malloc failed\n");
-    return 1;
-  }
   // allocate text: n symbols of different kinds
   if(input_is_16bit) 
    x=malloc((size_t) n*sizeof(uint16_t));
@@ -222,10 +214,10 @@ int main(int argc, char *argv[])
    x=malloc((size_t) n*sizeof(idx_t)); // wasted space if USE_INT64  but we need to widen the input for libsais64_long()
   else 
    x=malloc((size_t) n*sizeof(uint8_t));
-  if (! x) {
-    fprintf(stderr, "malloc failed\n");
-    free(p); return 1;
-  }
+  if (! x) quit("malloc failed");
+  // allocate space for SA
+  p=malloc((size_t) n*sizeof *p);
+  if (! p) quit("malloc failed");
 
   // read text 
   rewind(f);
@@ -235,11 +227,20 @@ int main(int argc, char *argv[])
        perror(fnam);free(x); free(p); return 1;
    }
   }
-  else if(input_is_int32) 
-   alpha_size = read_input_int32(f, n, x, (int32_t *) p, fnam); // use p as a temporary buffer
+  else if(input_is_int32) {
+    // read input, get alpha size and compute extra space
+    alpha_size = read_input_int32(f, n, x, (int32_t *) p, fnam); // use p as a temporary buffer
+    long extra_space_l = (long) 6 *alpha_size; // 6k extra space recommended for optimal performance
+    sa_extra_space =  (extra_space_l > INT32_MAX) ? INT32_MAX : (int32_t) extra_space_l;
+    if(Verbose>1) fprintf(stderr,"Alphabet size: %lld, Extra space: %d\n", (long long) alpha_size, sa_extra_space);
+    if(sa_extra_space>0) {
+      p = realloc(p, (size_t) (n+sa_extra_space)*sizeof *p);
+      if (! p) quit("realloc failed");
+    }
+  }
   else { // uint8 input
    if(fread(x, sizeof(uint8_t), (size_t)n, f)!=(size_t)n) {
-       perror(fnam);free(x); free(p); return 1;
+       perror(fnam);free(x); return 1;
    }
   }
 
@@ -255,15 +256,21 @@ int main(int argc, char *argv[])
     if(num_threads==0) e = libsais_int((int32_t *)x, p, n, alpha_size, sa_extra_space);
     else e = libsais_int_omp((int32_t *)x, p, n, alpha_size, sa_extra_space, num_threads);
     #endif
+    if(sa_extra_space>0) {
+      p = realloc(p, (size_t) n*sizeof *p);
+      if (! p) quit("realloc failed");
+    }
   } else if (input_is_16bit) {
+    assert(sa_extra_space==0); // for 16bit input we don't compute the alphabet size and we don't use extra space
     #ifdef USE_INT64
-    if(num_threads==0) e = libsais16x64((const uint16_t *)x, p, n, sa_extra_space, NULL);
-    else e = libsais16x64_omp((const uint16_t *)x, p, n, sa_extra_space, NULL, num_threads);
+    if(num_threads==0) e = libsais16x64((const uint16_t *)x, p, n, 0, NULL);
+    else e = libsais16x64_omp((const uint16_t *)x, p, n, 0, NULL, num_threads);
     #else
-    if(num_threads==0) e = libsais16((const uint16_t *)x, p, n, sa_extra_space, NULL);
+    if(num_threads==0) e = libsais16((const uint16_t *)x, p, n, 0, NULL);
     else e = libsais16_omp((const uint16_t *)x, p, n, sa_extra_space, NULL, num_threads);
     #endif
   } else { // 8bit input
+    assert(sa_extra_space==0); // for 8bit input we don't compute the alphabet size and we don't use extra space
     #ifdef USE_INT64
     if(num_threads==0) e = libsais64((const uint8_t *)x, p, n, sa_extra_space, NULL);
     else e = libsais64_omp((const uint8_t *)x, p, n, sa_extra_space, NULL,num_threads);
