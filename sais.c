@@ -1,18 +1,27 @@
 /* >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>   
-   Test suffix sorting and LCP building with libsais
+   Suffix array and LCP array construction with libsais
       
    Reads a sequence of unsigned bytes/short/int from a file
    and compute SA and LCP array using the sais+plcp (from libsais) algorithm  
 
    Note: this implementationcan work with 32 bits for inputs of size ar most 2**31-1, 
    for larger files we need to switch to 64 bits (for both SA and LCP)
-   Space usage 
-     8bit input: T + SA + LCP: 9n bytes 32bit, 17n 64bit
-    16bit input: T + SA + LCP: 10n bytes 32bit, 18n 64bit 
-    32bit input: T + SA + LCP: 12n bytes 32bit
-    The 64 bit version store the text in a 64bit array so space usage is 24n
-    The 64 bit version does not support the computation of the LCP array for 32bit input
-    Still need to explore the effect of the alphabet size on the space usage
+   Basic space usage 
+       8bit input: T + SA + LCP: 9n bytes 32bit, 17n 64bit
+      16bit input: T + SA + LCP: 10n bytes 32bit, 18n 64bit 
+      32bit input: T + SA + LCP: 12n bytes 32bit
+      The 64 bit version for 32 bit inputs store the text in a 64bit array, 
+      space usage for SA computation is 8n + 8n =  16n bytes 
+      The 64 bit version does not support the computation of the LCP array for 32bit input
+   Effect of alphabet size on space usage (parameter -M)  
+      The functions for the computation of the SA take as extra int32 parameter
+      the amount of extra space at the end of the SA array which is used
+      to sppedup the computation. Accodring to libsais doc for 8/16 bit inputs
+      0 extra space should be enough for most cases, while for 32 bit inputs
+      the recommended values is 6*alphabet_size.
+      By the default the program uses 6*alphabet_size for all inputs (where
+      alphabet size is 256/65536 for 8/16 bit inputs); the multiplier 6
+      can be modified with the -M command line parameter. 
    Runinng time: truly linear 
    >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> */
 #define _GNU_SOURCE
@@ -139,7 +148,7 @@ int main(int argc, char *argv[])
   FILE *f;
   int input_is_16bit = 0, input_is_int32 = 0, num_threads = 0;
   int sa_extra_space = 0;
-  int alpha_multiplier =0; // multiplier (x alpha size) to define sa_extra space  
+  int alpha_multiplier = 6; // multiplier (x alpha size) to define sa_extra space  
 
   /* ------------ set default values ------------- */
   char *sa_filename = NULL;
@@ -181,10 +190,10 @@ int main(int argc, char *argv[])
     fprintf(stderr, "Usage:\n\t%s [-w safile][-W lcpfile][-x|-i][-v][-a] file\n\n",argv[0]);
     fprintf(stderr,"\t-w safile   write sa to safile\n");
     fprintf(stderr,"\t-W lcpfile  write lcp to lcpfile\n");
-    fprintf(stderr,"\t-t threads  # helper threads [def. don't use omp functions]\n");
-    fprintf(stderr,"\t-M alphamul alphabet multiplier for extra sa space\n");    
+    fprintf(stderr,"\t-t threads  # helper omp threads [def. don't use omp functions]\n");
+    fprintf(stderr,"\t-M alphamul alphabet multiplier for extra sa space (def. %d)\n",alpha_multiplier);    
     fprintf(stderr,"\t-x          read input as sequence of uint16_t values\n");
-    fprintf(stderr,"\t-i          read input as sequence of int32_t values (integer alphabet)\n");
+    fprintf(stderr,"\t-i          read input as sequence of uint32_t values (integer alphabet)\n");
     fprintf(stderr,"\t-a          compute and print average LCP value\n");
     fprintf(stderr,"\t-v          produces a verbose output\n\n");
     return 0;
@@ -206,7 +215,7 @@ int main(int argc, char *argv[])
     if(n%2!=0) { fprintf(stderr, "%s: file size not a multiple of 2 (uint16 mode)\n", fnam); return 1; }
     n /= 2;
   } else if(input_is_int32) {
-    if(n%4!=0) { fprintf(stderr, "%s: file size not a multiple of 4 (int32 mode)\n", fnam); return 1; }
+    if(n%4!=0) { fprintf(stderr, "%s: file size not a multiple of 4 (uint32 mode)\n", fnam); return 1; }
     n /= 4;
   }
   if (n==0) {
@@ -216,7 +225,7 @@ int main(int argc, char *argv[])
   if(Verbose>1) fprintf(stderr,"Input size: %lld\n", (long long) n);
   #ifndef USE_INT64
   if(n > INT32_MAX) {
-    fprintf(stderr, "%s: input file too large for 32 bit version, use 64 bit version\n", fnam);
+    fprintf(stderr, "%s: too many symbols for 32 bit version, use 64 bit version\n", fnam);
     return 1;
   }
   #endif
@@ -233,7 +242,7 @@ int main(int argc, char *argv[])
   // read text 
   rewind(f);
   idx_t alpha_size = 0;  // alphabet size: exact for integer input, 2^8 or 2^16 for 8/16 bit
-  if(input_is_16bit) { // uint16 input 
+  if(input_is_16bit) {   // uint16 input 
    if(fread(x, sizeof(uint16_t), (size_t)n, f)!=(size_t)n)
      quit("error reading input file (16 bit)");
    alpha_size = 65536;
@@ -311,7 +320,7 @@ int main(int argc, char *argv[])
     if(Verbose>1) fprintf(stderr,"Computing lcp array\n");
     if (input_is_int32) {
       #ifdef USE_INT64
-      fprintf(stderr, "Error: LCP computation for int32 input is not supported when 64-bit "
+      fprintf(stderr, "Error: LCP computation for uint32 input is not supported when 64-bit "
                        "indices are required (n > 2^31-1) - libsais64.h has no plcp function "
                        "for integer-alphabet input.\n");
       free(x); free(p); free(plcp);
